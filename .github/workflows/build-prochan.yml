@@ -1,0 +1,45 @@
+name: Build ProChan Fixed APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone keiyoushi extensions-source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: keiyoushi/extensions-source
+          persist-credentials: false
+
+      - name: Apply fix
+        run: |
+          FILE="src/ar/mangapro/src/eu/kanade/tachiyomi/extension/ar/mangapro/ProChan.kt"
+          sed -i 's/network\.client\.newBuilder()/network.cloudflareClient.newBuilder()/' "$FILE"
+          sed -i 's/extVersionCode = 47/extVersionCode = 48/' src/ar/mangapro/build.gradle
+
+      - name: Verify fix applied
+        run: |
+          grep -n "cloudflareClient" src/ar/mangapro/src/eu/kanade/tachiyomi/extension/ar/mangapro/ProChan.kt
+          grep -n "extVersionCode" src/ar/mangapro/build.gradle
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@6cfc8b8e8bb586cc164bef1c478c1eea3a4d6a19
+
+      - name: Build APK
+        run: ./gradlew :src:ar:mangapro:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProChan-fixed
+          path: "**/*.apk"
+          retention-days: 7
