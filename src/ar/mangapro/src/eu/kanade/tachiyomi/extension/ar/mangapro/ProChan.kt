@@ -68,9 +68,6 @@ class ProChan : HttpSource(), ConfigurableSource {
         private val AUTH_COOKIE_NAMES = listOf(
             "next-auth.session-token",
             "__Secure-next-auth.session-token",
-            "auth_token",
-            "session",
-            "token",
         )
     }
 
@@ -83,11 +80,20 @@ class ProChan : HttpSource(), ConfigurableSource {
 
     override val client = network.cloudflareClient.newBuilder()
         .addInterceptor { chain ->
-            val response = chain.proceed(chain.request())
+            val request = chain.request()
+            val response = chain.proceed(request)
+            // Only surface domain-specific errors; ignore CDN/image host responses.
+            if (request.url.host != domain) return@addInterceptor response
             when (response.code) {
                 401, 403 -> {
-                    response.close()
-                    throw IOException("انتهت جلسة تسجيل الدخول. افتح إعدادات المصدر واضغط «$LOGIN_TITLE».")
+                    // Restrict auth-expired message to API/auth endpoints only.
+                    val path = request.url.encodedPath
+                    if (path.startsWith("/api") || path.startsWith("/auth")) {
+                        response.close()
+                        throw IOException("انتهت جلسة تسجيل الدخول. افتح إعدادات المصدر واضغط «$LOGIN_TITLE».")
+                    } else {
+                        response
+                    }
                 }
                 429, 503 -> {
                     response.close()

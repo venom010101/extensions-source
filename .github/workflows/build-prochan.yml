@@ -8,12 +8,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Clone keiyoushi extensions-source
+      - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
 
-      - name: Apply fix
+      - name: Verify and patch extension files
         run: |
           FILE=$(find . -name "ProChan.kt" | grep -i mangapro | head -1)
           if [ -z "$FILE" ]; then
