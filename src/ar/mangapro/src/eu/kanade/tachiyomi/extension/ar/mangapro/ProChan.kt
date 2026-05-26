@@ -5,7 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.util.Log
-import androidx.preference.EditTextPreference
+import androidx.preference.Preference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
@@ -179,11 +179,10 @@ class ProChan :
     }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        val loginPreference = EditTextPreference(screen.context).apply {
+        val loginPreference = Preference().apply {
             key = PREF_KEY_LOGIN
             title = LOGIN_TITLE
             summary = if (isLoggedIn()) LOGIN_SUMMARY_LOGGEDIN else LOGIN_SUMMARY_LOGGEDOUT
-            isPersistent = false
             setOnPreferenceClickListener {
                 val loginUrl = "$baseUrl/auth/login"
                 val intent = Intent().apply {
@@ -200,14 +199,14 @@ class ProChan :
         screen.addPreference(loginPreference)
 
         if (isLoggedIn()) {
-            val logoutPreference = EditTextPreference(screen.context).apply {
+            val logoutPreference = Preference().apply {
                 key = PREF_KEY_LOGOUT
                 title = LOGOUT_TITLE
                 summary = "مسح بيانات الجلسة"
-                isPersistent = false
                 setOnPreferenceClickListener {
                     clearAuthCookies()
-                    loginPreference.summary = LOGIN_SUMMARY_LOGGEDOUT
+                    screen.removeAll()
+                    setupPreferenceScreen(screen)
                     true
                 }
             }
