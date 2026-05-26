@@ -16,9 +16,23 @@ jobs:
 
       - name: Apply fix
         run: |
-          FILE="src/ar/mangapro/src/eu/kanade/tachiyomi/extension/ar/mangapro/ProChan.kt"
+          FILE=$(find . -name "ProChan.kt" | grep -i mangapro | head -1)
+          if [ -z "$FILE" ]; then
+            echo "ERROR: ProChan.kt not found"
+            find . -name "*.kt" | head -20
+            exit 1
+          fi
+          echo "Found file at: $FILE"
+
+          GRADLE=$(find . -path "*/ar/mangapro/build.gradle" | head -1)
+          if [ -z "$GRADLE" ]; then
+            echo "ERROR: build.gradle not found"
+            exit 1
+          fi
+          echo "Found gradle at: $GRADLE"
+
           sed -i 's/network\.client\.newBuilder()/network.cloudflareClient.newBuilder()/' "$FILE"
-          sed -i 's/extVersionCode = 47/extVersionCode = 48/' src/ar/mangapro/build.gradle
+          sed -i 's/extVersionCode = [0-9]*/extVersionCode = 49/' "$GRADLE"
 
       - name: Verify fix applied
         run: |
