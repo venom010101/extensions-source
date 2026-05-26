@@ -56,7 +56,9 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 
-class ProChan : HttpSource(), ConfigurableSource {
+class ProChan :
+    HttpSource(),
+    ConfigurableSource {
     companion object {
         private const val LOGIN_TITLE = "تسجيل الدخول / تجديد الجلسة"
         private const val LOGIN_SUMMARY_LOGGEDIN = "أنت مسجل دخول ✓ — اضغط لإعادة تسجيل الدخول أو تجديد الجلسة"
@@ -126,11 +128,9 @@ class ProChan : HttpSource(), ConfigurableSource {
      * Checks if a valid cf_clearance cookie exists for this domain.
      * Returns true if we likely have a valid CF session.
      */
-    private fun hasCFSession(): Boolean {
-        return network.cookieJar
-            .loadForRequest(baseUrl.toHttpUrl())
-            .any { it.name == "cf_clearance" && it.expiresAt > System.currentTimeMillis() }
-    }
+    private fun hasCFSession(): Boolean = network.cookieJar
+        .loadForRequest(baseUrl.toHttpUrl())
+        .any { it.name == "cf_clearance" && it.expiresAt > System.currentTimeMillis() }
 
     /**
      * Attempts a lightweight HEAD request to baseUrl to trigger
