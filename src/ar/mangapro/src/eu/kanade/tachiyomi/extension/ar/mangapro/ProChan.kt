@@ -118,12 +118,14 @@ class ProChan : HttpSource() {
     }
 
     override fun fetchLatestUpdates(page: Int): Observable<MangasPage> {
-        if (page == 1) warmupCloudflare()
-        val filters = getFilterList().apply {
-            firstInstance<SortFilter>().state = 1
-        }
+        return Observable.defer {
+            if (page == 1) warmupCloudflare()
+            val filters = getFilterList().apply {
+                firstInstance<SortFilter>().state = 1
+            }
 
-        return fetchSearchManga(page, "", filters)
+            fetchSearchManga(page, "", filters)
+        }
     }
 
     private val pageNumber = ConcurrentHashMap<String, Int>()
