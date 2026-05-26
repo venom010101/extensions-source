@@ -5,7 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.util.Log
-import androidx.preference.Preference
+import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
@@ -128,7 +128,7 @@ class ProChan :
      * Checks if a valid cf_clearance cookie exists for this domain.
      * Returns true if we likely have a valid CF session.
      */
-    private fun hasCFSession(): Boolean = network.cookieJar
+    private fun hasCFSession(): Boolean = client.cookieJar
         .loadForRequest(baseUrl.toHttpUrl())
         .any { it.name == "cf_clearance" && it.expiresAt > System.currentTimeMillis() }
 
@@ -157,7 +157,7 @@ class ProChan :
      * Uses common Next.js auth cookie names since the site is Next.js-based.
      */
     private fun isLoggedIn(): Boolean {
-        val cookieJar = network.cookieJar
+        val cookieJar = client.cookieJar
         val url = baseUrl.toHttpUrl()
         return cookieJar.loadForRequest(url).any { cookie ->
             cookie.name in AUTH_COOKIE_NAMES && cookie.expiresAt > System.currentTimeMillis()
@@ -175,16 +175,15 @@ class ProChan :
                 .expiresAt(0L)
                 .build()
         }
-        network.cookieJar.saveFromResponse(url, expiredCookies)
+        client.cookieJar.saveFromResponse(url, expiredCookies)
     }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        val loginPreference = Preference(screen.context).apply {
+        val loginPreference = EditTextPreference(screen.context).apply {
             key = PREF_KEY_LOGIN
             title = LOGIN_TITLE
-            summaryProvider = Preference.SummaryProvider<Preference> {
-                if (isLoggedIn()) LOGIN_SUMMARY_LOGGEDIN else LOGIN_SUMMARY_LOGGEDOUT
-            }
+            summary = if (isLoggedIn()) LOGIN_SUMMARY_LOGGEDIN else LOGIN_SUMMARY_LOGGEDOUT
+            isPersistent = false
             setOnPreferenceClickListener {
                 val loginUrl = "$baseUrl/auth/login"
                 val intent = Intent().apply {
@@ -201,14 +200,14 @@ class ProChan :
         screen.addPreference(loginPreference)
 
         if (isLoggedIn()) {
-            val logoutPreference = Preference(screen.context).apply {
+            val logoutPreference = EditTextPreference(screen.context).apply {
                 key = PREF_KEY_LOGOUT
                 title = LOGOUT_TITLE
                 summary = "مسح بيانات الجلسة"
+                isPersistent = false
                 setOnPreferenceClickListener {
                     clearAuthCookies()
-                    loginPreference.notifyChanged()
-                    screen.removePreference(this)
+                    loginPreference.summary = LOGIN_SUMMARY_LOGGEDOUT
                     true
                 }
             }
