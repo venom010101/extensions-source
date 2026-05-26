@@ -80,7 +80,9 @@ class ProChan : HttpSource() {
         .build()
 
     // Timestamp of last successful warmup (epoch ms)
+    @Volatile
     private var lastWarmupAt = 0L
+    private val warmupLock = Any()
 
     /**
      * Hits the base HTML page to force CloudflareInterceptor to open
@@ -90,11 +92,17 @@ class ProChan : HttpSource() {
     private fun warmupCloudflare() {
         val now = System.currentTimeMillis()
         if (now - lastWarmupAt < 30 * 60 * 1000L) return
-        try {
-            client.newCall(GET(baseUrl, headers)).execute().close()
-            lastWarmupAt = System.currentTimeMillis()
-        } catch (_: Exception) {
-            // Best-effort — subsequent request will fail with its own error
+        synchronized(warmupLock) {
+            if (System.currentTimeMillis() - lastWarmupAt < 30 * 60 * 1000L) return
+            try {
+                client.newCall(GET(baseUrl, headers)).execute().use { response ->
+                    if (response.isSuccessful) {
+                        lastWarmupAt = System.currentTimeMillis()
+                    }
+                }
+            } catch (_: Exception) {
+                // Best-effort — subsequent request will fail with its own error
+            }
         }
     }
 
