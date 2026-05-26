@@ -106,26 +106,22 @@ class ProChan : HttpSource() {
         }
     }
 
-    override fun fetchPopularManga(page: Int): Observable<MangasPage> {
-        return Observable.defer {
-            if (page == 1) warmupCloudflare()
-            val filters = getFilterList().apply {
-                firstInstance<SortFilter>().state = 2
-            }
-
-            fetchSearchManga(page, "", filters)
+    override fun fetchPopularManga(page: Int): Observable<MangasPage> = Observable.defer {
+        if (page == 1) warmupCloudflare()
+        val filters = getFilterList().apply {
+            firstInstance<SortFilter>().state = 2
         }
+
+        fetchSearchManga(page, "", filters)
     }
 
-    override fun fetchLatestUpdates(page: Int): Observable<MangasPage> {
-        return Observable.defer {
-            if (page == 1) warmupCloudflare()
-            val filters = getFilterList().apply {
-                firstInstance<SortFilter>().state = 1
-            }
-
-            fetchSearchManga(page, "", filters)
+    override fun fetchLatestUpdates(page: Int): Observable<MangasPage> = Observable.defer {
+        if (page == 1) warmupCloudflare()
+        val filters = getFilterList().apply {
+            firstInstance<SortFilter>().state = 1
         }
+
+        fetchSearchManga(page, "", filters)
     }
 
     private val pageNumber = ConcurrentHashMap<String, Int>()
@@ -382,11 +378,9 @@ class ProChan : HttpSource() {
 
     override fun pageListRequest(chapter: SChapter): Request = GET(getChapterUrl(chapter), rscHeaders)
 
-    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> {
-        return Observable.defer {
-            warmupCloudflare()
-            super.fetchPageList(chapter)
-        }
+    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = Observable.defer {
+        warmupCloudflare()
+        super.fetchPageList(chapter)
     }
 
     override fun getChapterUrl(chapter: SChapter): String {
