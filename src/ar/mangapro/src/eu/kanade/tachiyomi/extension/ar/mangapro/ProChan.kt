@@ -371,8 +371,10 @@ class ProChan : HttpSource() {
     override fun pageListRequest(chapter: SChapter): Request = GET(getChapterUrl(chapter), rscHeaders)
 
     override fun fetchPageList(chapter: SChapter): Observable<List<Page>> {
-        warmupCloudflare()
-        return super.fetchPageList(chapter)
+        return Observable.defer {
+            warmupCloudflare()
+            super.fetchPageList(chapter)
+        }
     }
 
     override fun getChapterUrl(chapter: SChapter): String {
