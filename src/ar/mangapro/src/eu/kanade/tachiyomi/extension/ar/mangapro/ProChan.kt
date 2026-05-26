@@ -79,7 +79,27 @@ class ProChan : HttpSource() {
         .set("rsc", "1")
         .build()
 
+    // Timestamp of last successful warmup (epoch ms)
+    private var lastWarmupAt = 0L
+
+    /**
+     * Hits the base HTML page to force CloudflareInterceptor to open
+     * a WebView, solve the CF challenge, and store cf_clearance cookies.
+     * Uses a 30-minute cache to avoid unnecessary extra requests.
+     */
+    private fun warmupCloudflare() {
+        val now = System.currentTimeMillis()
+        if (now - lastWarmupAt < 30 * 60 * 1000L) return
+        try {
+            client.newCall(GET(baseUrl, headers)).execute().close()
+            lastWarmupAt = System.currentTimeMillis()
+        } catch (_: Exception) {
+            // Best-effort — subsequent request will fail with its own error
+        }
+    }
+
     override fun fetchPopularManga(page: Int): Observable<MangasPage> {
+        if (page == 1) warmupCloudflare()
         val filters = getFilterList().apply {
             firstInstance<SortFilter>().state = 2
         }
@@ -88,6 +108,7 @@ class ProChan : HttpSource() {
     }
 
     override fun fetchLatestUpdates(page: Int): Observable<MangasPage> {
+        if (page == 1) warmupCloudflare()
         val filters = getFilterList().apply {
             firstInstance<SortFilter>().state = 1
         }
@@ -348,6 +369,11 @@ class ProChan : HttpSource() {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT)
 
     override fun pageListRequest(chapter: SChapter): Request = GET(getChapterUrl(chapter), rscHeaders)
+
+    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> {
+        warmupCloudflare()
+        return super.fetchPageList(chapter)
+    }
 
     override fun getChapterUrl(chapter: SChapter): String {
         val url = if (chapter.url.startsWith("{")) {
