@@ -205,7 +205,9 @@ class ProChan :
                 summary = "مسح بيانات الجلسة"
                 setOnPreferenceClickListener {
                     clearAuthCookies()
-                    screen.removeAll()
+                    while (screen.preferenceCount > 0) {
+                        screen.removePreference(screen.getPreference(0))
+                    }
                     setupPreferenceScreen(screen)
                     true
                 }
