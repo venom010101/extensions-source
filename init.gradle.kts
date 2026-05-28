@@ -1,5 +1,12 @@
 gradle.beforeSettings {
     pluginManagement {
+        resolutionStrategy {
+            eachPlugin {
+                if (requested.id.id.startsWith("org.jetbrains.kotlin.") && requested.version != null) {
+                    useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+                }
+            }
+        }
         repositories {
             maven {
                 url = uri("https://maven.aliyun.com/repository/google")
