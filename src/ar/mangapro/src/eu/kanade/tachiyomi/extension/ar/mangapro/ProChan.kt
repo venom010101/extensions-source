@@ -1,17 +1,12 @@
 package eu.kanade.tachiyomi.extension.ar.mangapro
 
-import android.content.ComponentName
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.util.Log
-import androidx.preference.Preference
-import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.network.await
-import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -32,7 +27,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.Callback
-import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -56,17 +50,8 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 
-class ProChan :
-    HttpSource(),
-    ConfigurableSource {
+class ProChan : HttpSource() {
     companion object {
-        private const val LOGIN_TITLE = "تسجيل الدخول / تجديد الجلسة"
-        private const val LOGIN_SUMMARY_LOGGEDIN = "أنت مسجل دخول ✓ — اضغط لإعادة تسجيل الدخول أو تجديد الجلسة"
-        private const val LOGIN_SUMMARY_LOGGEDOUT = "اضغط لتسجيل الدخول وحل تحقق Cloudflare"
-        private const val LOGOUT_TITLE = "تسجيل الخروج"
-        private const val WEBVIEW_ACTIVITY = "eu.kanade.tachiyomi.ui.webview.WebViewActivity"
-        private const val PREF_KEY_LOGIN = "pref_login_webview"
-        private const val PREF_KEY_LOGOUT = "pref_logout"
         private val AUTH_COOKIE_NAMES = listOf(
             "next-auth.session-token",
             "__Secure-next-auth.session-token",
@@ -92,14 +77,14 @@ class ProChan :
                     val path = request.url.encodedPath
                     if (path.startsWith("/api") || path.startsWith("/auth")) {
                         response.close()
-                        throw IOException("انتهت جلسة تسجيل الدخول. افتح إعدادات المصدر واضغط «$LOGIN_TITLE».")
+                        throw IOException("انتهت جلسة تسجيل الدخول. اضغط «Open in WebView» لتسجيل الدخول وتجديد الجلسة")
                     } else {
                         response
                     }
                 }
                 429, 503 -> {
                     response.close()
-                    throw IOException("Cloudflare يمنع الوصول حالياً. افتح إعدادات المصدر واضغط «$LOGIN_TITLE» لحل التحقق.")
+                    throw IOException("فشل تجاوز حماية Cloudflare — اضغط «Open in WebView» لتسجيل الدخول وتجديد الجلسة")
                 }
                 else -> response
             }
@@ -161,54 +146,6 @@ class ProChan :
         val url = baseUrl.toHttpUrl()
         return cookieJar.loadForRequest(url).any { cookie ->
             cookie.name in AUTH_COOKIE_NAMES && cookie.expiresAt > System.currentTimeMillis()
-        }
-    }
-
-    private fun clearAuthCookies() {
-        val url = baseUrl.toHttpUrl()
-        val expiredCookies = AUTH_COOKIE_NAMES.map { name ->
-            Cookie.Builder()
-                .name(name)
-                .value("")
-                .domain(url.host)
-                .path("/")
-                .expiresAt(0L)
-                .build()
-        }
-        client.cookieJar.saveFromResponse(url, expiredCookies)
-    }
-
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        val loginPreference = Preference().apply {
-            key = PREF_KEY_LOGIN
-            title = LOGIN_TITLE
-            summary = if (isLoggedIn()) LOGIN_SUMMARY_LOGGEDIN else LOGIN_SUMMARY_LOGGEDOUT
-            setOnPreferenceClickListener {
-                val loginUrl = "$baseUrl/auth/login"
-                val intent = Intent().apply {
-                    component = ComponentName(screen.context, WEBVIEW_ACTIVITY)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    putExtra("url_key", loginUrl)
-                    putExtra("source_key", id)
-                    putExtra("title_key", LOGIN_TITLE)
-                }
-                screen.context.startActivity(intent)
-                true
-            }
-        }
-        screen.addPreference(loginPreference)
-
-        if (isLoggedIn()) {
-            val logoutPreference = Preference().apply {
-                key = PREF_KEY_LOGOUT
-                title = LOGOUT_TITLE
-                summary = "مسح بيانات الجلسة"
-                setOnPreferenceClickListener {
-                    clearAuthCookies()
-                    true
-                }
-            }
-            screen.addPreference(logoutPreference)
         }
     }
 
