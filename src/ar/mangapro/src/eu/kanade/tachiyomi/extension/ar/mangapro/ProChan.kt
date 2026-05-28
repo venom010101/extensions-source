@@ -1,12 +1,17 @@
 package eu.kanade.tachiyomi.extension.ar.mangapro
 
+import android.content.ComponentName
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.util.Log
+import androidx.preference.Preference
+import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.network.await
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -27,6 +32,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -50,15 +56,54 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 
-class ProChan : HttpSource() {
+class ProChan :
+    HttpSource(),
+    ConfigurableSource {
+    companion object {
+        private const val LOGIN_TITLE = "تسجيل الدخول / تجديد الجلسة"
+        private const val LOGIN_SUMMARY_LOGGEDIN = "أنت مسجل دخول ✓ — اضغط لإعادة تسجيل الدخول أو تجديد الجلسة"
+        private const val LOGIN_SUMMARY_LOGGEDOUT = "اضغط لتسجيل الدخول وحل تحقق Cloudflare"
+        private const val LOGOUT_TITLE = "تسجيل الخروج"
+        private const val WEBVIEW_ACTIVITY = "eu.kanade.tachiyomi.ui.webview.WebViewActivity"
+        private const val PREF_KEY_LOGIN = "pref_login_webview"
+        private const val PREF_KEY_LOGOUT = "pref_logout"
+        private val AUTH_COOKIE_NAMES = listOf(
+            "next-auth.session-token",
+            "__Secure-next-auth.session-token",
+        )
+    }
+
     override val name = "ProChan"
     override val lang = "ar"
-    private val domain = "prochan.net"
+    private val domain = "procomic.net"
     override val baseUrl = "https://$domain"
     override val supportsLatest = true
     override val versionId = 5
 
     override val client = network.cloudflareClient.newBuilder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val response = chain.proceed(request)
+            // Only surface domain-specific errors; ignore CDN/image host responses.
+            if (request.url.host != domain) return@addInterceptor response
+            when (response.code) {
+                401, 403 -> {
+                    // Restrict auth-expired message to API/auth endpoints only.
+                    val path = request.url.encodedPath
+                    if (path.startsWith("/api") || path.startsWith("/auth")) {
+                        response.close()
+                        throw IOException("انتهت جلسة تسجيل الدخول. افتح إعدادات المصدر واضغط «$LOGIN_TITLE».")
+                    } else {
+                        response
+                    }
+                }
+                429, 503 -> {
+                    response.close()
+                    throw IOException("Cloudflare يمنع الوصول حالياً. افتح إعدادات المصدر واضغط «$LOGIN_TITLE» لحل التحقق.")
+                }
+                else -> response
+            }
+        }
         .addInterceptor(::scrambledImageInterceptor)
         .addNetworkInterceptor(
             CookieInterceptor(
@@ -79,35 +124,96 @@ class ProChan : HttpSource() {
         .set("rsc", "1")
         .build()
 
-    // Timestamp of last successful warmup (epoch ms)
-    @Volatile
-    private var lastWarmupAt = 0L
-    private val warmupLock = Any()
+    /**
+     * Checks if a valid cf_clearance cookie exists for this domain.
+     * Returns true if we likely have a valid CF session.
+     */
+    private fun hasCFSession(): Boolean = client.cookieJar
+        .loadForRequest(baseUrl.toHttpUrl())
+        .any { it.name == "cf_clearance" && it.expiresAt > System.currentTimeMillis() }
 
     /**
-     * Hits the base HTML page to force CloudflareInterceptor to open
-     * a WebView, solve the CF challenge, and store cf_clearance cookies.
-     * Uses a 30-minute cache to avoid unnecessary extra requests.
+     * Attempts a lightweight HEAD request to baseUrl to trigger
+     * CloudflareInterceptor's automatic WebView challenge resolution.
+     * Only runs when no valid CF session cookie exists.
+     * Silently ignored on failure — the actual request will surface
+     * a more informative error if CF is blocking.
      */
-    private fun warmupCloudflare() {
-        val now = System.currentTimeMillis()
-        if (now - lastWarmupAt < 30 * 60 * 1000L) return
-        synchronized(warmupLock) {
-            if (System.currentTimeMillis() - lastWarmupAt < 30 * 60 * 1000L) return
-            try {
-                client.newCall(GET(baseUrl, headers)).execute().use { response ->
-                    if (response.isSuccessful) {
-                        lastWarmupAt = System.currentTimeMillis()
-                    }
+    private fun ensureCFSession() {
+        if (hasCFSession()) return
+        try {
+            client.newCall(
+                Request.Builder()
+                    .url(baseUrl)
+                    .head()
+                    .headers(headers)
+                    .build(),
+            ).execute().close()
+        } catch (_: Exception) { }
+    }
+
+    /**
+     * Checks whether a valid auth session cookie exists.
+     * Uses common Next.js auth cookie names since the site is Next.js-based.
+     */
+    private fun isLoggedIn(): Boolean {
+        val cookieJar = client.cookieJar
+        val url = baseUrl.toHttpUrl()
+        return cookieJar.loadForRequest(url).any { cookie ->
+            cookie.name in AUTH_COOKIE_NAMES && cookie.expiresAt > System.currentTimeMillis()
+        }
+    }
+
+    private fun clearAuthCookies() {
+        val url = baseUrl.toHttpUrl()
+        val expiredCookies = AUTH_COOKIE_NAMES.map { name ->
+            Cookie.Builder()
+                .name(name)
+                .value("")
+                .domain(url.host)
+                .path("/")
+                .expiresAt(0L)
+                .build()
+        }
+        client.cookieJar.saveFromResponse(url, expiredCookies)
+    }
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        val loginPreference = Preference().apply {
+            key = PREF_KEY_LOGIN
+            title = LOGIN_TITLE
+            summary = if (isLoggedIn()) LOGIN_SUMMARY_LOGGEDIN else LOGIN_SUMMARY_LOGGEDOUT
+            setOnPreferenceClickListener {
+                val loginUrl = "$baseUrl/auth/login"
+                val intent = Intent().apply {
+                    component = ComponentName(screen.context, WEBVIEW_ACTIVITY)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra("url_key", loginUrl)
+                    putExtra("source_key", id)
+                    putExtra("title_key", LOGIN_TITLE)
                 }
-            } catch (_: Exception) {
-                // Best-effort — subsequent request will fail with its own error
+                screen.context.startActivity(intent)
+                true
             }
+        }
+        screen.addPreference(loginPreference)
+
+        if (isLoggedIn()) {
+            val logoutPreference = Preference().apply {
+                key = PREF_KEY_LOGOUT
+                title = LOGOUT_TITLE
+                summary = "مسح بيانات الجلسة"
+                setOnPreferenceClickListener {
+                    clearAuthCookies()
+                    true
+                }
+            }
+            screen.addPreference(logoutPreference)
         }
     }
 
     override fun fetchPopularManga(page: Int): Observable<MangasPage> = Observable.defer {
-        if (page == 1) warmupCloudflare()
+        if (page == 1) ensureCFSession()
         val filters = getFilterList().apply {
             firstInstance<SortFilter>().state = 2
         }
@@ -116,7 +222,7 @@ class ProChan : HttpSource() {
     }
 
     override fun fetchLatestUpdates(page: Int): Observable<MangasPage> = Observable.defer {
-        if (page == 1) warmupCloudflare()
+        if (page == 1) ensureCFSession()
         val filters = getFilterList().apply {
             firstInstance<SortFilter>().state = 1
         }
@@ -379,7 +485,7 @@ class ProChan : HttpSource() {
     override fun pageListRequest(chapter: SChapter): Request = GET(getChapterUrl(chapter), rscHeaders)
 
     override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = Observable.defer {
-        warmupCloudflare()
+        ensureCFSession()
         super.fetchPageList(chapter)
     }
 
