@@ -23,6 +23,12 @@ gradle.beforeSettings {
             maven {
                 url = uri("https://plugins.gradle.org/m2/")
             }
+            maven {
+                url = uri("https://maven.pkg.jetbrains.space/kotlin/p/kotlin/dev")
+            }
+            maven {
+                url = uri("https://maven.pkg.jetbrains.space/kotlin/p/kotlin/bootstrap")
+            }
             mavenCentral()
             gradlePluginPortal()
         }
